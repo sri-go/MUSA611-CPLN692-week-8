@@ -28,7 +28,6 @@ this logic.
 4. Directions should come back in a form which can be processed into a line which
     we can then plot on our map
 
-
 *Tasks*
 
 Task 0 (optional): Prepare your tools so that you can efficiently explore this problem
@@ -43,7 +42,6 @@ which allow us to rapidly prototype API requests.
 
 I suggest Postman, which is available for free in the chrome app store. It provides
 a cleaner, easier way to test ajax calls than simply using the console.
-
 
 Task 1: Use Mapbox's 'Search' API to 'geocode' information from your input
 
@@ -72,6 +70,10 @@ Task 2: Use Mapbox's 'Navigation' API to generate a route based on your origin a
 
 The docs: https://docs.mapbox.com/api/navigation/#directions
 (No example url provided, try to figure it out using the docs)
+
+
+https://api.mapbox.com/directions/v5/mapbox/driving/13.43,52.51;13.42,52.5;13.41,52.5?access_token=pk.eyJ1Ijoic3JpLWdvIiwiYSI6ImNrODUyeHp1YjAyb2wzZXA4b21veGhqdjgifQ.wprAUOeXWkoWy1-nbUd1NQ
+
 
 Again, the task is somewhat underspecified. Let's start with the simplest routing
 option available. Once you're getting a valid (as best you can tell) response
@@ -122,7 +124,8 @@ var state = {
     updated: null
   }
 };
-
+var mapboxAccessToken = 'pk.eyJ1Ijoic3JpLWdvIiwiYSI6ImNrODUyeHp1YjAyb2wzZXA4b21veGhqdjgifQ.wprAUOeXWkoWy1-nbUd1NQ';
+var featureGroup;
 /* We'll use underscore's `once` function to make sure this only happens
  *  one time even if weupdate the position later
  */
@@ -140,6 +143,7 @@ var updatePosition = function(lat, lng, updated) {
   state.position.updated = updated;
   state.position.marker.addTo(map);
   goToOrigin(lat, lng);
+  console.log(state.position.marker._latlng);
 };
 
 $(document).ready(function() {
@@ -151,8 +155,7 @@ $(document).ready(function() {
   } else {
     alert("Unable to access geolocation API!");
   }
-
-
+  
   /* Every time a key is lifted while typing in the #dest input, disable
    * the #calculate button if no text is in the input
    */
@@ -164,11 +167,52 @@ $(document).ready(function() {
     }
   });
 
+  function clear_layer(layer) {
+    if(layer != null){
+      map.removeLayer(layer);
+    }
+  }
+  var search_box = L.mapbox.geocoderControl(('mapbox.places'),{keepOpen: false}).addTo(map);
+  search_box.on('found', function(){
+  });
   // click handler for the "calculate" button (probably you want to do something with this)
   $("#calculate").click(function(e) {
+    clear_layer(featureGroup); 
     var dest = $('#dest').val();
     console.log(dest);
+    var http = `https://api.mapbox.com/geocoding/v5/mapbox.places/${dest}.json?limit=1&access_token=`+mapboxAccessToken;
+    console.log(http);
+    $.ajax(http).done(function(data){
+      console.log(data.features[0].center);
+      var origin_latitude = state.position.marker._latlng.lat;
+      //console.log('origin latitude ',origin_latitude);
+      var origin_longitude = state.position.marker._latlng.lng;
+      //console.log('origin longitude ', origin_longitude);
+
+      var dest_longitude = data.features[0].center[0];
+      //console.log('dest longitude', dest_longitude);
+      var dest_latitude = data.features[0].center[1];
+      //console.log('dest latitude ', dest_latitude);
+      var dest_marker = L.geoJson(data);
+      $.ajax(`https://api.mapbox.com/directions/v5/mapbox/driving/${origin_longitude},${origin_latitude};${dest_longitude},${dest_latitude}?access_token=`+mapboxAccessToken)
+      .done(function(data){
+        console.log(data);
+        var decoded_data = polyline.decode(data.routes[0].geometry);
+        var switch_lat_lng = _.map(decoded_data, function(data){
+          // console.log(data[1],data[0]);  
+          return [data[0],data[1]] = [data[1],data[0]];
+        });
+        console.log(switch_lat_lng);
+        var line = turf.lineString(switch_lat_lng);
+        direction_line =  L.geoJson(line);
+        featureGroup = L.featureGroup([dest_marker, direction_line]);
+        featureGroup.addTo(map);
+      });
+    });
   });
 
 });
+
+
+
 

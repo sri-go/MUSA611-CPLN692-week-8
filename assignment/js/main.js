@@ -43,40 +43,146 @@ Keeping track of `marker1`, `marker2`, and `line` will help us remove
 them from the map when we need to reset the map.
 ---------------- */
 
-var state = {
-  markers: [],
-  line: undefined,
+// var state = {
+//   markers: [],
+//   line: undefined,
+// };
+
+/** ---------------
+Mabox Map configuration
+---------------- */
+var mapboxAccessToken = 'pk.eyJ1Ijoic3JpLWdvIiwiYSI6ImNrODUyeHp1YjAyb2wzZXA4b21veGhqdjgifQ.wprAUOeXWkoWy1-nbUd1NQ';
+mapboxgl.accessToken = mapboxAccessToken;
+var map = new mapboxgl.Map({
+  container: 'map', // container id
+  style: 'mapbox://styles/mapbox/dark-v10', // stylesheet location
+  center: [-75.165222, 39.952583], // starting position [lng, lat]
+  zoom: 10 // starting zoom
+});
+
+/** ---------------
+Mapbox Draw configuration
+---------------- */
+var Draw = new MapboxDraw({
+  displayControlsDefault: false,
+  controls: {
+    point: true,
+    line_string: false,
+    polygon: false,
+    trash: false
+  },
+  styles: [
+    //Points coloring
+    {
+      'id': 'highlight-active-points',
+      'type': 'circle',
+      'filter': ['all',
+        ['==', '$type', 'Point'],
+        ['==', 'meta', 'feature'],
+        ['==', 'active', 'true']
+      ],
+      'paint': {
+        'circle-radius': 7,
+        'circle-color': '#FFFFFF'
+      }
+    },
+    {
+      'id': 'points-are-red',
+      'type': 'circle',
+      'filter': ['all',
+        ['==', '$type', 'Point'],
+        ['==', 'meta', 'feature'],
+        ['==', 'active', 'false']
+      ],
+      'paint': {
+        'circle-radius': 5,
+        'circle-color': '#FF5F52'
+      }
+    }
+  ]
+});
+map.addControl(Draw, 'top-left');
+map.addControl(new mapboxgl.NavigationControl({
+  showCompass: false
+}));
+map.addControl(
+  new mapboxgl.GeolocateControl({
+    positionOptions: {
+      enableHighAccuracy: true
+    },
+    trackUserLocation: true
+  })
+);
+
+//this function gets the directions between 2 given points
+function getDirections() {
+  var coords = Draw.getAll();
+  console.log(Draw.getAll());
+  var origin_longitude = coords.features[0].geometry.coordinates[0]
+  var origin_latitude = coords.features[0].geometry.coordinates[1]
+  var dest_longitude = coords.features[1].geometry.coordinates[0]
+  var dest_latitude = coords.features[1].geometry.coordinates[1]
+
+  //query returns optimized route in geojson format with 1st point being origin and last point being destination
+  //query works for 2 points
+  var http = `https://api.mapbox.com/optimized-trips/v1/mapbox/driving/${origin_longitude},${origin_latitude};${dest_longitude},${dest_latitude}?geometries=geojson&source=first&destination=last&roundtrip=false&access_token=` + mapboxAccessToken;
+  console.log(http);
+
+  $.ajax(http).done(function (data) {
+    // console.log(data);    
+    //plot the returned geojson data
+    //first add the source as a geojson layer
+    map.addSource('route', {
+      'type': 'geojson',
+      'data': {
+        'type': 'Feature',
+        'properties': {},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': data.trips[0].geometry.coordinates
+        }
+      }
+    });
+    //now adding it as a layer
+    map.addLayer({
+      'id': 'route',
+      'type': 'line',
+      'source': 'route',
+      'layout': {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      'paint': {
+        'line-color': '#ff6347',
+        'line-width': 8
+      }
+    });
+  });
 };
 
-/** ---------------
-Map configuration
----------------- */
-
-var map = L.map('map', {
-  center: [42.378, -71.103],
-  zoom: 14
+map.on('draw.create', function (e) {
+  var coords = Draw.getAll();
+  if(coords.features.length == 2 ){getDirections()};
+  $('#button-reset').show();
 });
 
-var Stamen_TonerLite = L.tileLayer('http://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
-  attribution: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  subdomains: 'abcd',
-}).addTo(map);
-
-/** ---------------
-Leaflet Draw configuration
----------------- */
-
-var drawControl = new L.Control.Draw({
-  draw: {
-    polyline: false,
-    polygon: false,
-    circle: false,
-    marker: true,
-    rectangle: false,
-  }
+map.on('draw.delete', function (e) {
+  console.log(e.features);
 });
 
-map.addControl(drawControl);
+$(document).ready(function () {
+  console.log("Ready");
+
+  var resetApplication = function () {
+    Draw.deleteAll();
+    if (map.getLayer('route')) {
+      map.removeLayer('route');
+      $('#button-reset').hide();
+      map.removeSource('route');
+    };
+  };
+  $('#button-reset').click(resetApplication);
+});
 
 /** ---------------
 Reset application
@@ -86,16 +192,18 @@ write the rest of your application with this in mind, you won't need to make any
 function. That being said, you are welcome to make changes if it helps.
 ---------------- */
 
-var resetApplication = function() {
-  _.each(state.markers, function(marker) { map.removeLayer(marker) })
-  map.removeLayer(state.line);
+// var resetApplication = function () {
+//   _.each(state.markers, function (marker) {
+//     map.removeLayer(marker);
+//   });
+//   map.removeLayer(state.line);
 
-  state.markers = []
-  state.line = undefined;
-  $('#button-reset').hide();
-}
+//   state.markers = [];
+//   state.line = undefined;
+//   $('#button-reset').hide();
+// };
 
-$('#button-reset').click(resetApplication);
+// $('#button-reset').click(resetApplication);
 
 /** ---------------
 On draw
@@ -103,10 +211,10 @@ On draw
 Leaflet Draw runs every time a marker is added to the map. When this happens
 ---------------- */
 
-map.on('draw:created', function (e) {
-  var type = e.layerType; // The type of shape
-  var layer = e.layer; // The Leaflet layer for the shape
-  var id = L.stamp(layer); // The unique Leaflet ID for the
+// map.on('draw:created', function (e) {
+//   var type = e.layerType; // The type of shape
+//   var layer = e.layer; // The Leaflet layer for the shape
+//   var id = L.stamp(layer); // The unique Leaflet ID for the
 
-  console.log('Do something with the layer you just created:', layer, layer._latlng);
-});
+//   console.log('Do something with the layer you just created:', layer, layer._latlng);
+// });
